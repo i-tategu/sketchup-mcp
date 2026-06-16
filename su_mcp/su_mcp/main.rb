@@ -9,7 +9,7 @@ SKETCHUP_CONSOLE.show rescue nil
 module SU_MCP
   class Server
     def initialize
-      @port = 9876
+      @port = (ENV['SKETCHUP_MCP_PORT'] || 9877).to_i
       @server = nil
       @running = false
       @timer_id = nil
@@ -35,8 +35,19 @@ module SU_MCP
       STDOUT.flush
     end
 
+    def show_console
+      SKETCHUP_CONSOLE.show rescue nil
+    end
+
+    def hide_console
+      SKETCHUP_CONSOLE.hide rescue nil
+    end
+
     def start
       return if @running
+
+      @connected = false
+      show_console
       
       begin
         log "Starting server on localhost:#{@port}..."
@@ -88,6 +99,13 @@ module SU_MCP
                     client.write(response_json)
                     client.flush
                     log "Response sent"
+
+                    # 接続確認できたらコンソールを自動で隠す (初回のみ)
+                    unless @connected
+                      @connected = true
+                      log "MCP connected — auto-hiding console in 2s"
+                      UI.start_timer(2.0, false) { hide_console }
+                    end
                   rescue JSON::ParserError => e
                     log "JSON parse error: #{e.message}"
                     error_response = {
@@ -98,6 +116,7 @@ module SU_MCP
                     client.write(error_response)
                     client.flush
                   rescue StandardError => e
+                    show_console
                     log "Request error: #{e.message}"
                     error_response = {
                       jsonrpc: "2.0",
@@ -116,6 +135,7 @@ module SU_MCP
           rescue IO::WaitReadable
             # Normal for accept_nonblock
           rescue StandardError => e
+            show_console
             log "Timer error: #{e.message}"
             log e.backtrace.join("\n")
           end
@@ -124,6 +144,7 @@ module SU_MCP
         log "Server started and listening"
         
       rescue StandardError => e
+        show_console
         log "Error: #{e.message}"
         log e.backtrace.join("\n")
         stop
@@ -1854,6 +1875,16 @@ module SU_MCP
     menu = UI.menu("Plugins").add_submenu("MCP Server")
     menu.add_item("Start Server") { @server.start }
     menu.add_item("Stop Server") { @server.stop }
+
+    # --- Auto-start: SketchUp 起動時に自動でサーバーを開始 (XYLOGIC 連携) ---
+    # 起動直後は UI 準備中のことがあるため 1 秒遅延 + 例外で読込を壊さないようガード
+    UI.start_timer(1.0, false) do
+      begin
+        @server.start
+      rescue => e
+        puts "MCP auto-start failed: #{e.message}"
+      end
+    end
     
     file_loaded(__FILE__)
   end

@@ -1,4 +1,5 @@
 from mcp.server.fastmcp import FastMCP, Context
+import os
 import socket
 import json
 import asyncio
@@ -219,7 +220,7 @@ def get_sketchup_connection():
             _sketchup_connection = None
     
     if _sketchup_connection is None:
-        _sketchup_connection = SketchupConnection(host="localhost", port=9876)
+        _sketchup_connection = SketchupConnection(host="localhost", port=int(os.environ.get("SKETCHUP_MCP_PORT", "9877")))
         if not _sketchup_connection.connect():
             logger.error("Failed to connect to Sketchup")
             _sketchup_connection = None
